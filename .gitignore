@@ -1,0 +1,4 @@
+/storage/logs/*.log
+/.idea/
+/.vscode/
+Thumbs.db

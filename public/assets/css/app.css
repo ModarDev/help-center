@@ -1,0 +1,129 @@
+:root {
+    --bg-1: #f4f7fb;
+    --bg-2: #e7ecf5;
+    --card: #ffffff;
+    --ink: #132238;
+    --muted: #5a6f87;
+    --accent: #0d6efd;
+    --danger: #c92a2a;
+    --success: #2b8a3e;
+    --line: #d9e2ef;
+    --shadow: 0 20px 45px rgba(13, 61, 122, 0.14);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    color: var(--ink);
+    background: radial-gradient(circle at top right, #fef6e4 0%, var(--bg-1) 35%), linear-gradient(135deg, var(--bg-1), var(--bg-2));
+    min-height: 100vh;
+}
+
+.auth-shell,
+.dashboard-shell {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+}
+
+.auth-card,
+.dashboard-card {
+    width: 100%;
+    max-width: 440px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 28px;
+}
+
+h1 {
+    margin: 0 0 8px;
+    font-size: 28px;
+}
+
+.subtitle {
+    margin: 0 0 20px;
+    color: var(--muted);
+}
+
+label {
+    display: block;
+    margin: 12px 0 6px;
+    font-weight: 600;
+}
+
+input {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 11px 12px;
+    font-size: 15px;
+}
+
+button {
+    width: 100%;
+    margin-top: 16px;
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent);
+    cursor: pointer;
+}
+
+button:hover {
+    filter: brightness(0.95);
+}
+
+button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.hint {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.message {
+    margin-top: 12px;
+    font-size: 14px;
+    min-height: 20px;
+}
+
+.message.error {
+    color: var(--danger);
+}
+
+.message.success {
+    color: var(--success);
+}
+
+.user-meta {
+    margin-top: 16px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    background: #f7f9fc;
+    line-height: 1.7;
+}
+
+@media (max-width: 520px) {
+    .auth-card,
+    .dashboard-card {
+        padding: 20px;
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+}
