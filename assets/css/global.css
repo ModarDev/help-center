@@ -1,0 +1,13 @@
+/* Global style center point: edit font here once to apply across pages */
+:root {
+    --app-font-family: Tahoma, sans-serif;
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea {
+    font-family: var(--app-font-family);
+}
