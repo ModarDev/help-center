@@ -1,5 +1,6 @@
 <?php
 require_once '../../auth/config.php';
+require_once __DIR__ . '/../config/dashboard_menu_config.php';
 
 if (!isLoggedIn()) {
 	header('Location: ../../auth/login');
@@ -19,6 +20,11 @@ try {
 	}
 
 	if (!userHasAnyRole(['sell_car', 'employee'])) {
+		header('Location: ../../auth/login');
+		exit();
+	}
+
+	if (!currentUserCanAccessDashboardMenu('customerlist', ['sidebar'])) {
 		header('Location: ../../auth/login');
 		exit();
 	}

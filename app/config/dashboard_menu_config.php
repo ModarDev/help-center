@@ -1,13 +1,15 @@
 <?php
 
 if (!function_exists('normalizeRoleKeyForMenuConfig')) {
-    function normalizeRoleKeyForMenuConfig($roleKey) {
+    function normalizeRoleKeyForMenuConfig($roleKey)
+    {
         return strtolower(str_replace([' ', '-'], '_', trim((string)$roleKey)));
     }
 }
 
 if (!function_exists('formatRoleLabelFromKey')) {
-    function formatRoleLabelFromKey($roleKey) {
+    function formatRoleLabelFromKey($roleKey)
+    {
         $normalized = normalizeRoleKeyForMenuConfig($roleKey);
         if ($normalized === '') {
             return 'User';
@@ -17,8 +19,227 @@ if (!function_exists('formatRoleLabelFromKey')) {
     }
 }
 
+if (!function_exists('getDashboardMenuAdminConfigPath')) {
+    function getDashboardMenuAdminConfigPath()
+    {
+        return __DIR__ . '/dashboard_menu_overrides.json';
+    }
+}
+
+if (!function_exists('getDashboardMenuAdminOverrides')) {
+    function getDashboardMenuAdminOverrides()
+    {
+        $path = getDashboardMenuAdminConfigPath();
+        if (!is_file($path)) {
+            return [];
+        }
+
+        $raw = @file_get_contents($path);
+        if (!is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+}
+
+if (!function_exists('saveDashboardMenuAdminOverrides')) {
+    function saveDashboardMenuAdminOverrides(array $payload, &$error = '')
+    {
+        $error = '';
+
+        $registry = $payload['registry'] ?? null;
+        $rules = $payload['rules'] ?? null;
+
+        if (!is_array($registry) || !is_array($rules)) {
+            $error = 'Payload must include registry and rules as arrays.';
+            return false;
+        }
+
+        foreach (['top_nav', 'sidebar', 'footer'] as $section) {
+            if (!isset($registry[$section]) || !is_array($registry[$section])) {
+                $error = 'Invalid registry section: ' . $section;
+                return false;
+            }
+
+            foreach ($registry[$section] as $key => $item) {
+                if (!is_string($key) || $key === '' || !is_array($item)) {
+                    $error = 'Invalid registry item in section: ' . $section;
+                    return false;
+                }
+            }
+        }
+
+        foreach ($rules as $role => $sections) {
+            if (!is_string($role) || !is_array($sections)) {
+                $error = 'Invalid rules structure.';
+                return false;
+            }
+
+            foreach (['top_nav', 'sidebar', 'footer'] as $section) {
+                if (!isset($sections[$section]) || !is_array($sections[$section])) {
+                    $error = 'Invalid rules section for role ' . $role . ': ' . $section;
+                    return false;
+                }
+
+                foreach ($sections[$section] as $menuKey) {
+                    if (!is_string($menuKey) || trim($menuKey) === '') {
+                        $error = 'Invalid menu key in role ' . $role . ' section ' . $section;
+                        return false;
+                    }
+                }
+            }
+        }
+
+        $json = json_encode([
+            'schema_version' => 1,
+            'updated_at' => gmdate('c'),
+            'registry' => $registry,
+            'rules' => $rules,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if (!is_string($json)) {
+            $error = 'Unable to encode payload as JSON.';
+            return false;
+        }
+
+        $path = getDashboardMenuAdminConfigPath();
+        $written = @file_put_contents($path, $json);
+        if ($written === false) {
+            $error = 'Unable to write override file: ' . $path;
+            return false;
+        }
+
+        return true;
+    }
+}
+
+if (!function_exists('getDashboardMenuExportPayload')) {
+    function getDashboardMenuExportPayload($mode = 'effective')
+    {
+        $normalizedMode = strtolower(trim((string)$mode));
+        if ($normalizedMode === 'default') {
+            return [
+                'schema_version' => 1,
+                'exported_at' => gmdate('c'),
+                'mode' => 'default',
+                'registry' => getDashboardMenuBaseRegistry(),
+                'rules' => getDashboardMenuBaseRoleRules(),
+            ];
+        }
+
+        return [
+            'schema_version' => 1,
+            'exported_at' => gmdate('c'),
+            'mode' => 'effective',
+            'registry' => getDashboardMenuRegistry(),
+            'rules' => getDashboardRoleMenuRules(),
+        ];
+    }
+}
+
+if (!function_exists('ensureDashboardMenuAuditLogTable')) {
+    function ensureDashboardMenuAuditLogTable(PDO $pdo)
+    {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS dashboard_menu_audit_logs (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                action VARCHAR(40) NOT NULL,
+                actor_user_id VARCHAR(80) NOT NULL,
+                actor_role VARCHAR(80) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                summary VARCHAR(255) NOT NULL,
+                payload_json LONGTEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_dashboard_menu_audit_created_at (created_at),
+                INDEX idx_dashboard_menu_audit_actor (actor_user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    }
+}
+
+if (!function_exists('logDashboardMenuAuditEvent')) {
+    function logDashboardMenuAuditEvent(PDO $pdo, $action, $status, $summary, $payload = null)
+    {
+        try {
+            ensureDashboardMenuAuditLogTable($pdo);
+
+            $jsonPayload = null;
+            if (is_array($payload)) {
+                $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if (is_string($encoded)) {
+                    $jsonPayload = $encoded;
+                }
+            }
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO dashboard_menu_audit_logs (action, actor_user_id, actor_role, status, summary, payload_json) VALUES (?, ?, ?, ?, ?, ?)'
+            );
+
+            $stmt->execute([
+                substr(trim((string)$action), 0, 40),
+                substr(trim((string)($_SESSION['user_id'] ?? 'unknown')), 0, 80),
+                substr(trim((string)($_SESSION['user_role'] ?? 'unknown')), 0, 80),
+                substr(trim((string)$status), 0, 20),
+                substr(trim((string)$summary), 0, 255),
+                $jsonPayload,
+            ]);
+
+            return true;
+        } catch (Throwable $e) {
+            error_log('Dashboard menu audit log failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+}
+
+if (!function_exists('getDashboardMenuAuditLogs')) {
+    function getDashboardMenuAuditLogs(PDO $pdo, $limit = 25)
+    {
+        $safeLimit = (int)$limit;
+        if ($safeLimit < 1) {
+            $safeLimit = 1;
+        }
+        if ($safeLimit > 100) {
+            $safeLimit = 100;
+        }
+
+        try {
+            ensureDashboardMenuAuditLogTable($pdo);
+            $stmt = $pdo->query(
+                'SELECT id, action, actor_user_id, actor_role, status, summary, created_at FROM dashboard_menu_audit_logs ORDER BY id DESC LIMIT ' . $safeLimit
+            );
+            return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        } catch (Throwable $e) {
+            error_log('Dashboard menu audit read failed: ' . $e->getMessage());
+            return [];
+        }
+    }
+}
+
+if (!function_exists('clearDashboardMenuAdminOverrides')) {
+    function clearDashboardMenuAdminOverrides(&$error = '')
+    {
+        $error = '';
+        $path = getDashboardMenuAdminConfigPath();
+
+        if (!is_file($path)) {
+            return true;
+        }
+
+        if (!@unlink($path)) {
+            $error = 'Unable to remove override file: ' . $path;
+            return false;
+        }
+
+        return true;
+    }
+}
+
 if (!function_exists('getDashboardRoleLabels')) {
-    function getDashboardRoleLabels(PDO $pdo = null) {
+    function getDashboardRoleLabels(PDO $pdo = null)
+    {
         $fallback = [
             'system_admin' => 'System Admin',
             'admin' => 'Admin',
@@ -61,7 +282,8 @@ if (!function_exists('getDashboardRoleLabels')) {
 }
 
 if (!function_exists('getRoleDashboardHomeHref')) {
-    function getRoleDashboardHomeHref(PDO $pdo = null, $roleKey = '', $fallback = 'index.php') {
+    function getRoleDashboardHomeHref(PDO $pdo = null, $roleKey = '', $fallback = 'index.php')
+    {
         if (!$pdo) {
             return (string)$fallback;
         }
@@ -97,85 +319,213 @@ if (!function_exists('getRoleDashboardHomeHref')) {
     }
 }
 
-if (!function_exists('getDashboardMenuRegistry')) {
-    function getDashboardMenuRegistry() {
+if (!function_exists('getDashboardMenuBaseRegistry')) {
+    function getDashboardMenuBaseRegistry()
+    {
         return [
             'top_nav' => [
                 'dashboard' => ['key' => 'dashboard', 'label' => 'Dashboard', 'sub' => 'Overview', 'href' => '#'],
                 'sales' => ['key' => 'sales', 'label' => 'Sales', 'sub' => 'Orders & Invoices', 'href' => 'spa.php?module=sales'],
                 'setup' => ['key' => 'setup', 'label' => 'Setup', 'sub' => 'System Setup', 'href' => 'company_settings.php?module=setup'],
-                'users' => ['key' => 'users', 'label' => 'Users', 'sub' => 'User Management', 'href' => 'user.php?module=setup']
+                'menu-config' => ['key' => 'menu-config', 'label' => 'Menu Config', 'sub' => 'Role Menu Setup', 'href' => 'page_dashboard_menu_config.php?module=menuconfig'],
+                'users' => ['key' => 'users', 'label' => 'Users', 'sub' => 'User Management', 'href' => 'user.php?module=setup'],
             ],
             'sidebar' => [
                 'sales' => ['key' => 'sales', 'label' => 'Sales', 'sub' => 'Orders & Invoices', 'href' => 'spa.php?module=sales', 'color' => '#e53935', 'iconSrc' => '../../assets/images/icons/sidebar/sales.svg'],
+                'purchases' => ['key' => 'purchases', 'label' => 'Purchases', 'sub' => 'Suppliers & Bills', 'href' => '#', 'color' => '#7b1fa2', 'iconSrc' => '../../assets/images/icons/sidebar/inventory.svg'],
                 'branch' => ['key' => 'branch', 'label' => 'Branch Management', 'sub' => 'branch', 'href' => '../admin/page_branch_crud.php?module=branch', 'color' => '#fb8c00', 'iconSrc' => '../../assets/images/icons/sidebar/branch.png'],
                 'inventory' => ['key' => 'inventory', 'label' => 'Items and Inventory', 'sub' => 'Items & Stock', 'href' => '#', 'color' => '#2e7d32', 'iconSrc' => '../../assets/images/icons/sidebar/inventory.svg'],
                 'manufacturing' => ['key' => 'manufacturing', 'label' => 'Manufacturing', 'sub' => 'Work Orders', 'href' => '#', 'color' => '#00897b', 'iconSrc' => '../../assets/images/icons/sidebar/manufacturing.svg'],
                 'fixed-assets' => ['key' => 'fixed-assets', 'label' => 'Fixed Assets', 'sub' => 'Assets & Depreciation', 'href' => '#', 'color' => '#1976d2', 'iconSrc' => '../../assets/images/icons/sidebar/fixed-assets.svg'],
                 'dimensions' => ['key' => 'dimensions', 'label' => 'Dimensions', 'sub' => 'Budget & Analysis', 'href' => '#', 'color' => '#6a1b9a', 'iconSrc' => '../../assets/images/icons/sidebar/dimensions.svg'],
                 'discord' => ['key' => 'discord', 'label' => 'Discord', 'sub' => 'Communication', 'href' => '../admin/page_setup_discord.php?module=discord', 'color' => '#7289da', 'iconSrc' => '../../assets/images/icons/sidebar/discord.png'],
+                'menu-config' => ['key' => 'menu-config', 'label' => 'Menu Config', 'sub' => 'Role Menu Setup', 'href' => 'page_dashboard_menu_config.php?module=menuconfig', 'color' => '#3949ab', 'iconSrc' => '../../assets/images/icons/sidebar/setup.svg'],
                 'setup' => ['key' => 'setup', 'label' => 'ตั้งค่า', 'sub' => 'System Setup', 'href' => 'company_settings.php?module=setup', 'color' => '#455a64', 'iconSrc' => '../../assets/images/icons/sidebar/setup.svg'],
                 'user-setup' => ['key' => 'user-setup', 'label' => 'ตั้งผู้ใช้งานในระบบ', 'sub' => 'System Setup report', 'href' => 'edit_user.php?module=setup', 'color' => '#455a64', 'iconSrc' => '../../assets/images/icons/sidebar/user.png'],
-                'customer' => ['key' => 'customer', 'label' => 'Customer Management ', 'sub' => 'Customer Management', 'href' => 'page_customer_management.php?module=customer', 'color' => '#455a64', 'iconSrc' => '../../assets/images/icons/sidebar/customer.png'],
+                'customer' => ['key' => 'customer', 'label' => 'Customer Management', 'sub' => 'Customer Management', 'href' => 'page_customer_management.php?module=customer', 'color' => '#455a64', 'iconSrc' => '../../assets/images/icons/sidebar/customer.png'],
                 'customerlist' => ['key' => 'customerlist', 'label' => 'Customer List', 'sub' => 'Customer List', 'href' => 'page_customer_list.php?module=customer', 'color' => '#455a64', 'iconSrc' => '../../assets/images/icons/sidebar/customer-list.png'],
                 'groupsetup' => ['key' => 'groupsetup', 'label' => 'Group Setup', 'sub' => 'Group Setup', 'href' => 'setup_group_sales.php?module=groupsetup', 'color' => '#85a5b4', 'iconSrc' => '../../assets/images/icons/sidebar/partners.png'],
-                'groupsjoin' => ['key' => 'groupsjoin', 'label' => 'Join Group', 'sub' => 'Join by Invite', 'href' => 'join_group_sales.php?module=groupsjoin', 'color' => '#5b8aa6', 'iconSrc' => '../../assets/images/icons/sidebar/partners.png']
+                'groupsjoin' => ['key' => 'groupsjoin', 'label' => 'Join Group', 'sub' => 'Join by Invite', 'href' => 'join_group_sales.php?module=groupsjoin', 'color' => '#5b8aa6', 'iconSrc' => '../../assets/images/icons/sidebar/partners.png'],
             ],
-            
             'footer' => [
                 'home' => ['tip' => 'Home', 'color' => '#b8d7ff', 'href' => 'index.php', 'iconSrc' => '../../assets/images/icons/sidebar/foot-home.svg'],
                 'users' => ['tip' => 'Users', 'color' => '#c7f1d6', 'href' => 'user.php?module=setup', 'iconSrc' => '../../assets/images/icons/sidebar/foot-users.svg'],
                 'reports' => ['tip' => 'Reports', 'color' => '#ffd7a8', 'href' => '#', 'iconSrc' => '../../assets/images/icons/sidebar/foot-reports.svg'],
-                'logout' => ['tip' => 'Logout', 'color' => '#ffb8b8', 'href' => '../../auth/logout.php', 'iconSrc' => '../../assets/images/icons/sidebar/foot-logout.svg']
-            ]
+                'logout' => ['tip' => 'Logout', 'color' => '#ffb8b8', 'href' => '../../auth/logout.php', 'iconSrc' => '../../assets/images/icons/sidebar/foot-logout.svg'],
+            ],
+        ];
+    }
+}
+
+if (!function_exists('getDashboardMenuRegistry')) {
+    function getDashboardMenuRegistry()
+    {
+        $registry = getDashboardMenuBaseRegistry();
+        $overrides = getDashboardMenuAdminOverrides();
+
+        if (!isset($overrides['registry']) || !is_array($overrides['registry'])) {
+            return $registry;
+        }
+
+        foreach (['top_nav', 'sidebar', 'footer'] as $section) {
+            if (!isset($overrides['registry'][$section]) || !is_array($overrides['registry'][$section])) {
+                continue;
+            }
+
+            foreach ($overrides['registry'][$section] as $key => $item) {
+                if (!is_string($key) || trim($key) === '' || !is_array($item)) {
+                    continue;
+                }
+
+                if (!isset($item['key']) || trim((string)$item['key']) === '') {
+                    $item['key'] = $key;
+                }
+
+                $registry[$section][$key] = $item;
+            }
+        }
+
+        return $registry;
+    }
+}
+
+if (!function_exists('getDashboardMenuBaseRoleRules')) {
+    function getDashboardMenuBaseRoleRules()
+    {
+        return [
+            'system_admin' => [
+                'top_nav' => ['dashboard', 'setup', 'menu-config', 'users'],
+                'sidebar' => ['sales', 'branch', 'inventory', 'manufacturing', 'fixed-assets', 'dimensions', 'setup', 'menu-config', 'user-setup'],
+                'footer' => ['home', 'users', 'logout'],
+            ],
+            'admin' => [
+                'top_nav' => ['dashboard', 'setup', 'menu-config', 'users'],
+                'sidebar' => ['sales', 'branch', 'discord', 'inventory', 'manufacturing', 'fixed-assets', 'dimensions', 'setup', 'menu-config', 'user-setup'],
+                'footer' => ['home', 'users', 'logout'],
+            ],
+            'manager' => [
+                'top_nav' => ['dashboard', 'sales'],
+                'sidebar' => ['sales', 'purchases', 'inventory'],
+                'footer' => ['home', 'reports', 'logout'],
+            ],
+            'employee' => [
+                'top_nav' => ['dashboard'],
+                'sidebar' => ['sales', 'customer', 'customerlist', 'groupsjoin', 'inventory'],
+                'footer' => ['home', 'logout'],
+            ],
+            'sell_car' => [
+                'top_nav' => ['dashboard', 'sales'],
+                'sidebar' => ['sales', 'customer', 'customerlist', 'groupsjoin'],
+                'footer' => ['home', 'reports', 'logout'],
+            ],
+            'sales_manager' => [
+                'top_nav' => ['dashboard', 'sales'],
+                'sidebar' => ['sales', 'customer', 'customerlist', 'groupsetup'],
+                'footer' => ['home', 'reports', 'logout'],
+            ],
+            'default' => [
+                'top_nav' => ['dashboard'],
+                'sidebar' => ['sales'],
+                'footer' => ['home', 'logout'],
+            ],
         ];
     }
 }
 
 if (!function_exists('getDashboardRoleMenuRules')) {
-    function getDashboardRoleMenuRules() {
-        return [
-            'system_admin' => [
-                'top_nav' => ['dashboard', 'setup', 'users'],
-                'sidebar' => ['sales', 'branch', 'inventory', 'manufacturing', 'fixed-assets', 'dimensions', 'setup', 'user-setup'],
-                'footer' => ['home', 'users', 'logout']
-            ],
-            'admin' => [
-                'top_nav' => ['dashboard', 'setup', 'users'],
-                'sidebar' => ['sales', 'branch', 'discord', 'inventory', 'manufacturing', 'fixed-assets', 'dimensions', 'setup', 'user-setup'],
-                'footer' => ['home', 'users', 'logout']
-            ],
-            'manager' => [
-                'top_nav' => ['dashboard', 'sales'],
-                'sidebar' => ['sales', 'purchases', 'inventory'],
-                'footer' => ['home', 'reports', 'logout']
-            ],
-            'employee' => [
-                'top_nav' => ['dashboard'],
-                'sidebar' => ['sales', 'customer', 'customerlist', 'groupsjoin', 'inventory'],
-                'footer' => ['home', 'logout']
-            ],
-            'sell_car' => [
-                'top_nav' => ['dashboard', 'sales'],
-                'sidebar' => ['sales','customer','customerlist','groupsjoin'],
-                'footer' => ['home', 'reports', 'logout']
-            ],
-            'sales_manager' => [
-                'top_nav' => ['dashboard', 'sales'],
-                'sidebar' => ['sales','customer','customerlist','groupsetup'],
-                'footer' => ['home', 'reports', 'logout']
-            ],
-            'default' => [
-                'top_nav' => ['dashboard'],
-                'sidebar' => ['sales'],
-                'footer' => ['home', 'logout']
-            ]
-        ];
+    function getDashboardRoleMenuRules()
+    {
+        $rules = getDashboardMenuBaseRoleRules();
+        $overrides = getDashboardMenuAdminOverrides();
+
+        if (!isset($overrides['rules']) || !is_array($overrides['rules'])) {
+            return $rules;
+        }
+
+        foreach ($overrides['rules'] as $role => $sections) {
+            if (!is_string($role) || trim($role) === '' || !is_array($sections)) {
+                continue;
+            }
+
+            $normalizedRole = normalizeRoleKeyForMenuConfig($role);
+            $rules[$normalizedRole] = [
+                'top_nav' => array_values(array_filter((array)($sections['top_nav'] ?? []), 'is_string')),
+                'sidebar' => array_values(array_filter((array)($sections['sidebar'] ?? []), 'is_string')),
+                'footer' => array_values(array_filter((array)($sections['footer'] ?? []), 'is_string')),
+            ];
+        }
+
+        return $rules;
+    }
+}
+
+if (!function_exists('getDashboardAllowedMenuKeysByRole')) {
+    function getDashboardAllowedMenuKeysByRole($roleKey, $section = 'sidebar')
+    {
+        $normalizedRole = normalizeRoleKeyForMenuConfig($roleKey);
+        $normalizedSection = strtolower(trim((string)$section));
+        if (!in_array($normalizedSection, ['top_nav', 'sidebar', 'footer'], true)) {
+            return [];
+        }
+
+        $rulesMap = getDashboardRoleMenuRules();
+        $rules = $rulesMap[$normalizedRole] ?? $rulesMap['default'] ?? [];
+        $keys = (array)($rules[$normalizedSection] ?? []);
+
+        $safeKeys = [];
+        foreach ($keys as $key) {
+            if (is_string($key) && trim($key) !== '') {
+                $safeKeys[] = trim($key);
+            }
+        }
+
+        return array_values(array_unique($safeKeys));
+    }
+}
+
+if (!function_exists('isDashboardMenuKeyAllowedForRole')) {
+    function isDashboardMenuKeyAllowedForRole($roleKey, $section, $menuKey)
+    {
+        $allowed = getDashboardAllowedMenuKeysByRole($roleKey, $section);
+        return in_array(trim((string)$menuKey), $allowed, true);
+    }
+}
+
+if (!function_exists('canRoleAccessAnyDashboardMenuSection')) {
+    function canRoleAccessAnyDashboardMenuSection($roleKey, $menuKey, array $sections = ['sidebar', 'top_nav', 'footer'])
+    {
+        $normalizedRole = normalizeRoleKeyForMenuConfig($roleKey);
+        $normalizedMenuKey = trim((string)$menuKey);
+        if ($normalizedRole === '' || $normalizedMenuKey === '') {
+            return false;
+        }
+
+        foreach ($sections as $section) {
+            $sectionKey = strtolower(trim((string)$section));
+            if (!in_array($sectionKey, ['top_nav', 'sidebar', 'footer'], true)) {
+                continue;
+            }
+
+            if (isDashboardMenuKeyAllowedForRole($normalizedRole, $sectionKey, $normalizedMenuKey)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('currentUserCanAccessDashboardMenu')) {
+    function currentUserCanAccessDashboardMenu($menuKey, array $sections = ['sidebar', 'top_nav', 'footer'])
+    {
+        $currentRole = (string)($_SESSION['user_role'] ?? '');
+        return canRoleAccessAnyDashboardMenuSection($currentRole, $menuKey, $sections);
     }
 }
 
 if (!function_exists('pickDashboardMenuItems')) {
-    function pickDashboardMenuItems(array $registry, array $allowedKeys) {
+    function pickDashboardMenuItems(array $registry, array $allowedKeys)
+    {
         $items = [];
 
         foreach ($allowedKeys as $key) {
@@ -188,12 +538,45 @@ if (!function_exists('pickDashboardMenuItems')) {
     }
 }
 
+if (!function_exists('getDashboardMenuValidationIssues')) {
+    function getDashboardMenuValidationIssues(array $registry = null, array $rulesMap = null)
+    {
+        $registry = $registry ?? getDashboardMenuRegistry();
+        $rulesMap = $rulesMap ?? getDashboardRoleMenuRules();
+
+        $issues = [];
+        foreach (['top_nav', 'sidebar', 'footer'] as $section) {
+            $registryKeys = array_keys((array)($registry[$section] ?? []));
+
+            foreach ($rulesMap as $role => $ruleSections) {
+                foreach ((array)($ruleSections[$section] ?? []) as $menuKey) {
+                    if (!in_array($menuKey, $registryKeys, true)) {
+                        $issues[] = $section . ' missing key: ' . $menuKey . ' in role ' . $role;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($issues));
+    }
+}
+
 if (!function_exists('getDashboardMenuConfigByRole')) {
-    function getDashboardMenuConfigByRole($roleKey, PDO $pdo = null, array $options = []) {
+    function getDashboardMenuConfigByRole($roleKey, PDO $pdo = null, array $options = [])
+    {
         $normalizedRole = normalizeRoleKeyForMenuConfig($roleKey);
         $labels = getDashboardRoleLabels($pdo);
         $registry = getDashboardMenuRegistry();
         $rulesMap = getDashboardRoleMenuRules();
+
+        static $loggedValidation = false;
+        if (!$loggedValidation) {
+            $issues = getDashboardMenuValidationIssues($registry, $rulesMap);
+            if (!empty($issues)) {
+                error_log('Dashboard menu config issues: ' . implode(' | ', $issues));
+            }
+            $loggedValidation = true;
+        }
 
         $rules = $rulesMap[$normalizedRole] ?? $rulesMap['default'];
         $roleLabel = $labels[$normalizedRole] ?? formatRoleLabelFromKey($normalizedRole);
@@ -202,9 +585,9 @@ if (!function_exists('getDashboardMenuConfigByRole')) {
             ? (string)$options['home_href']
             : getRoleDashboardHomeHref($pdo, $normalizedRole, 'index.php');
 
-        $topNav = pickDashboardMenuItems($registry['top_nav'], (array)($rules['top_nav'] ?? []));
-        $sidebar = pickDashboardMenuItems($registry['sidebar'], (array)($rules['sidebar'] ?? []));
-        $footer = pickDashboardMenuItems($registry['footer'], (array)($rules['footer'] ?? []));
+        $topNav = pickDashboardMenuItems((array)$registry['top_nav'], (array)($rules['top_nav'] ?? []));
+        $sidebar = pickDashboardMenuItems((array)$registry['sidebar'], (array)($rules['sidebar'] ?? []));
+        $footer = pickDashboardMenuItems((array)$registry['footer'], (array)($rules['footer'] ?? []));
 
         foreach ($footer as &$item) {
             if (($item['tip'] ?? '') === 'Home') {
@@ -228,7 +611,7 @@ if (!function_exists('getDashboardMenuConfigByRole')) {
             'portal_label' => $portalLabel,
             'top_nav' => $topNav,
             'sidebar' => $sidebar,
-            'footer' => $footer
+            'footer' => $footer,
         ];
     }
 }

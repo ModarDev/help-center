@@ -1,5 +1,6 @@
 <?php
 require_once '../../auth/config.php';
+require_once __DIR__ . '/../config/dashboard_menu_config.php';
 
 if (!isLoggedIn()) {
     header('Location: ../../auth/login');
@@ -9,6 +10,11 @@ if (!isLoggedIn()) {
 try {
     $access_pdo = getDBConnection();
     if (!userHasAnyRole(['sales_manager'])) {
+        header('Location: ../../auth/login');
+        exit();
+    }
+
+    if (!currentUserCanAccessDashboardMenu('customer', ['sidebar'])) {
         header('Location: ../../auth/login');
         exit();
     }

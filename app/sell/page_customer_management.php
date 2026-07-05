@@ -14,6 +14,11 @@ try {
         exit();
     }
 
+    if (!currentUserCanAccessDashboardMenu('customer', ['sidebar'])) {
+        header("Location: ../../auth/login");
+        exit();
+    }
+
     if (shouldRequireBranchSelection($access_pdo)) {
         $active_branch_id = getCurrentBranchId();
         if ($active_branch_id === '' || !setCurrentBranchContext($access_pdo, $active_branch_id)) {

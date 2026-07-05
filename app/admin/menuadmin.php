@@ -1150,6 +1150,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         document.querySelectorAll('.sb-tile').forEach(function (t) { t.classList.remove('active'); });
     }
 
+    function normalizeModuleKey(key) {
+        var normalized = String(key || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+        if (normalized === 'menuconfig') {
+            return 'menu-config';
+        }
+        return normalized;
+    }
+
     function setActiveTopNav(key) {
         document.querySelectorAll('#tb-nav .tb-nav-item').forEach(function (item) {
             item.classList.toggle('active', item.getAttribute('data-key') === key);
@@ -1262,10 +1270,71 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         setActiveTopNav('dashboard');
     }
 
+    function openMenuByModuleParam(rawModule) {
+        var moduleKey = normalizeModuleKey(rawModule);
+        if (!moduleKey) {
+            return false;
+        }
+
+        var matchedTopNav = null;
+        topNavItems.some(function (item) {
+            if (normalizeModuleKey(item.key) === moduleKey) {
+                matchedTopNav = item;
+                return true;
+            }
+            return false;
+        });
+
+        if (matchedTopNav) {
+            setActiveTopNav(matchedTopNav.key || '');
+            clearActiveTiles();
+            pageSub.textContent = matchedTopNav.sub ? '— ' + matchedTopNav.sub : '';
+            jsBc.textContent = matchedTopNav.label || 'Detail';
+
+            var navHref = matchedTopNav.href || '#';
+            if (navHref !== '#') {
+                showDetail(navHref, matchedTopNav.label || 'Detail');
+            } else {
+                showTiles();
+            }
+            return true;
+        }
+
+        var matchedSide = null;
+        sidebarTiles.some(function (tile) {
+            if (normalizeModuleKey(tile.key) === moduleKey) {
+                matchedSide = tile;
+                return true;
+            }
+            return false;
+        });
+
+        if (matchedSide) {
+            clearActiveTiles();
+            setActiveTopNav('');
+            pageSub.textContent = matchedSide.sub ? '— ' + matchedSide.sub : '';
+            jsBc.textContent = matchedSide.label || 'Detail';
+
+            if (matchedSide.href && matchedSide.href !== '#') {
+                showDetail(matchedSide.href, matchedSide.label || 'Detail');
+            } else {
+                showDash();
+            }
+            return true;
+        }
+
+        return false;
+    }
+
     renderTopNav();
     bindTopNavEvents();
     renderSidebarMenus();
     bindSidebarTileEvents();
+
+    var initialModule = new URLSearchParams(window.location.search).get('module') || '';
+    if (!openMenuByModuleParam(initialModule)) {
+        showTiles();
+    }
 
     /* ── SIDEBAR TOGGLE ── */
     var sidebar    = document.getElementById('sidebar');
@@ -1289,6 +1358,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     sbOverlay.addEventListener('click', closeSidebar);
     btnBackDetail.addEventListener('click', function () {
         showTiles();
+        var nextUrl = window.location.pathname;
+        window.history.replaceState({}, '', nextUrl);
     });
 
 
