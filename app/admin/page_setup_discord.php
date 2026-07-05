@@ -15,10 +15,7 @@ try {
         exit();
     }
 
-    if (!currentUserCanAccessDashboardMenu('discord', ['sidebar'])) {
-        header("Location: ../../auth/login");
-        exit();
-    }
+    enforceCurrentUserDashboardMenuAccess('discord', ['sidebar']);
 } catch (Throwable $e) {
     error_log('Role access check failed in page_setup_discord.php: ' . $e->getMessage());
     header("Location: ../../auth/login");

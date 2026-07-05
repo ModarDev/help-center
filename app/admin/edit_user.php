@@ -1,15 +1,18 @@
 <?php
 require_once '../../auth/config.php';
+require_once __DIR__ . '/../config/dashboard_menu_config.php';
 
 if (!isLoggedIn()) {
 	header('Location: ../../auth/login');
 	exit();
 }
 
-if (($_SESSION['user_role'] ?? '') !== 'admin') {
+if (!userHasAnyRole(['admin', 'system_admin'])) {
 	header('Location: ../../auth/login');
 	exit();
 }
+
+enforceCurrentUserDashboardMenuAccessAny(['user-setup', 'users'], ['sidebar', 'top_nav', 'footer']);
 
 $allowed_modules = ['sales', 'purchases', 'inventory', 'manufacturing', 'fixed-assets', 'dimensions', 'banking-gl', 'setup'];
 $current_module = isset($_POST['module'])

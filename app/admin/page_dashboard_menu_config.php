@@ -12,6 +12,8 @@ if (!userHasAnyRole(['admin', 'system_admin'])) {
     exit();
 }
 
+enforceCurrentUserDashboardMenuAccess('menu-config', ['top_nav', 'sidebar']);
+
 $csrf_token = generateCSRFToken();
 $errors = [];
 $success = '';
@@ -27,6 +29,15 @@ try {
 $currentRegistry = getDashboardMenuRegistry();
 $currentRules = getDashboardRoleMenuRules();
 $selectedRole = normalizeRoleKeyForMenuConfig((string)($_POST['role_key'] ?? $_GET['role'] ?? ''));
+$maxConfigJsonBytes = 1024 * 1024; // 1 MB hard limit per payload.
+
+$roleLabels = getDashboardRoleLabels($pdo instanceof PDO ? $pdo : null);
+foreach (array_keys($currentRules) as $roleKey) {
+    if (!isset($roleLabels[$roleKey])) {
+        $roleLabels[$roleKey] = formatRoleLabelFromKey($roleKey);
+    }
+}
+$editableRoleKeys = array_values(array_unique(array_merge(array_keys($currentRules), array_keys($roleLabels))));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -58,6 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $roleKey = normalizeRoleKeyForMenuConfig((string)($_POST['role_key'] ?? ''));
         if ($roleKey === '') {
             $errors[] = 'กรุณาเลือก Role ที่ต้องการแก้สิทธิ์';
+        } elseif (!in_array($roleKey, $editableRoleKeys, true)) {
+            $errors[] = 'Role ที่เลือกไม่อยู่ในรายการที่อนุญาตให้แก้ไข';
         } else {
             $nextRules = $currentRules;
             $nextRules[$roleKey] = [
@@ -117,6 +130,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $registryJson = trim((string)($_POST['registry_json'] ?? ''));
         $rulesJson = trim((string)($_POST['rules_json'] ?? ''));
 
+        if (strlen($registryJson) > $maxConfigJsonBytes || strlen($rulesJson) > $maxConfigJsonBytes) {
+            $errors[] = 'ขนาด JSON เกินกำหนด (สูงสุด 1 MB ต่อช่อง)';
+        }
+
         $decodedRegistry = json_decode($registryJson, true);
         if (!is_array($decodedRegistry)) {
             $errors[] = 'Registry JSON ไม่ถูกต้อง';
@@ -158,12 +175,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (isset($_FILES['import_file']) && is_array($_FILES['import_file']) && (int)($_FILES['import_file']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
             $tmpFile = (string)($_FILES['import_file']['tmp_name'] ?? '');
-            if ($tmpFile !== '' && is_file($tmpFile)) {
+            $fileSize = (int)($_FILES['import_file']['size'] ?? 0);
+            if ($fileSize > $maxConfigJsonBytes) {
+                $errors[] = 'ไฟล์นำเข้าใหญ่เกินกำหนด (สูงสุด 1 MB)';
+            }
+            if ($tmpFile !== '' && is_file($tmpFile) && is_uploaded_file($tmpFile)) {
                 $fileRaw = file_get_contents($tmpFile);
                 if (is_string($fileRaw) && trim($fileRaw) !== '') {
                     $importRaw = $fileRaw;
                 }
+            } elseif ($tmpFile !== '') {
+                $errors[] = 'ไฟล์นำเข้าไม่ถูกต้อง';
             }
+        }
+
+        if (strlen($importRaw) > $maxConfigJsonBytes) {
+            $errors[] = 'ข้อมูลนำเข้าใหญ่เกินกำหนด (สูงสุด 1 MB)';
         }
 
         if ($importRaw === '') {
@@ -235,13 +262,6 @@ $validationIssues = getDashboardMenuValidationIssues($currentRegistry, $currentR
 $overridePath = getDashboardMenuAdminConfigPath();
 $hasOverride = is_file($overridePath);
 $auditLogs = $pdo instanceof PDO ? getDashboardMenuAuditLogs($pdo, 25) : [];
-$roleLabels = getDashboardRoleLabels($pdo instanceof PDO ? $pdo : null);
-
-foreach (array_keys($currentRules) as $roleKey) {
-    if (!isset($roleLabels[$roleKey])) {
-        $roleLabels[$roleKey] = formatRoleLabelFromKey($roleKey);
-    }
-}
 
 if ($selectedRole === '' || !isset($currentRules[$selectedRole])) {
     $selectedRole = isset($currentRules['admin'])

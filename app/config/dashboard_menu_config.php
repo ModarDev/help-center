@@ -19,6 +19,162 @@ if (!function_exists('formatRoleLabelFromKey')) {
     }
 }
 
+if (!function_exists('isDashboardMenuIdentifierValid')) {
+    function isDashboardMenuIdentifierValid($value)
+    {
+        return is_string($value) && (bool)preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/', trim($value));
+    }
+}
+
+if (!function_exists('dashboardMenuSafeSubstr')) {
+    function dashboardMenuSafeSubstr($value, $length)
+    {
+        $text = (string)$value;
+        $maxLength = (int)$length;
+        if ($maxLength < 0) {
+            $maxLength = 0;
+        }
+
+        if (function_exists('mb_substr')) {
+            return mb_substr($text, 0, $maxLength, 'UTF-8');
+        }
+
+        return substr($text, 0, $maxLength);
+    }
+}
+
+if (!function_exists('isDashboardMenuHrefSafe')) {
+    function isDashboardMenuHrefSafe($href)
+    {
+        $value = trim((string)$href);
+        if ($value === '' || $value === '#') {
+            return true;
+        }
+
+        if (strpos($value, "\0") !== false) {
+            return false;
+        }
+
+        // Only relative app paths are allowed in menu config.
+        if (preg_match('/^(?:https?:|javascript:|data:|vbscript:|file:|\/\/)/i', $value)) {
+            return false;
+        }
+
+        return true;
+    }
+}
+
+if (!function_exists('isDashboardMenuColorSafe')) {
+    function isDashboardMenuColorSafe($color)
+    {
+        $value = trim((string)$color);
+        if ($value === '') {
+            return true;
+        }
+
+        return (bool)preg_match('/^#[0-9a-fA-F]{3,8}$/', $value);
+    }
+}
+
+if (!function_exists('sanitizeDashboardMenuItemForSection')) {
+    function sanitizeDashboardMenuItemForSection($section, $key, array $item, $strict = false, &$error = '')
+    {
+        $error = '';
+        $sectionKey = strtolower(trim((string)$section));
+        if (!in_array($sectionKey, ['top_nav', 'sidebar', 'footer'], true)) {
+            $error = 'Invalid menu section: ' . $sectionKey;
+            return null;
+        }
+
+        $itemKey = strtolower(trim((string)$key));
+        if (!isDashboardMenuIdentifierValid($itemKey)) {
+            $error = 'Invalid menu key format: ' . $itemKey;
+            return null;
+        }
+
+        $normalized = $item;
+        $normalized['key'] = $itemKey;
+
+        $labelKey = ($sectionKey === 'footer') ? 'tip' : 'label';
+        $label = trim((string)($normalized[$labelKey] ?? ''));
+        if ($label === '') {
+            if ($strict) {
+                $error = 'Missing required field ' . $labelKey . ' for menu key: ' . $itemKey;
+                return null;
+            }
+            $label = $itemKey;
+        }
+        $normalized[$labelKey] = dashboardMenuSafeSubstr($label, 120);
+
+        if (isset($normalized['sub'])) {
+            $normalized['sub'] = dashboardMenuSafeSubstr(trim((string)$normalized['sub']), 180);
+        }
+
+        if (isset($normalized['href'])) {
+            $href = trim((string)$normalized['href']);
+            if (!isDashboardMenuHrefSafe($href)) {
+                if ($strict) {
+                    $error = 'Unsafe href for menu key: ' . $itemKey;
+                    return null;
+                }
+                $href = '#';
+            }
+            $normalized['href'] = dashboardMenuSafeSubstr($href, 300);
+        }
+
+        if (isset($normalized['iconSrc'])) {
+            $iconSrc = trim((string)$normalized['iconSrc']);
+            if ($iconSrc !== '' && !isDashboardMenuHrefSafe($iconSrc)) {
+                if ($strict) {
+                    $error = 'Unsafe iconSrc for menu key: ' . $itemKey;
+                    return null;
+                }
+                $iconSrc = '';
+            }
+            $normalized['iconSrc'] = dashboardMenuSafeSubstr($iconSrc, 255);
+        }
+
+        if (isset($normalized['color'])) {
+            $color = trim((string)$normalized['color']);
+            if (!isDashboardMenuColorSafe($color)) {
+                if ($strict) {
+                    $error = 'Unsafe color value for menu key: ' . $itemKey;
+                    return null;
+                }
+                unset($normalized['color']);
+            } else {
+                $normalized['color'] = $color;
+            }
+        }
+
+        return $normalized;
+    }
+}
+
+if (!function_exists('filterDashboardRuleKeysByAllowed')) {
+    function filterDashboardRuleKeysByAllowed(array $keys, array $allowedKeys)
+    {
+        $allowedLookup = array_fill_keys($allowedKeys, true);
+        $result = [];
+
+        foreach ($keys as $rawKey) {
+            $menuKey = strtolower(trim((string)$rawKey));
+            if ($menuKey === '') {
+                continue;
+            }
+            if (!isDashboardMenuIdentifierValid($menuKey)) {
+                continue;
+            }
+            if (!isset($allowedLookup[$menuKey])) {
+                continue;
+            }
+            $result[] = $menuKey;
+        }
+
+        return array_values(array_unique($result));
+    }
+}
+
 if (!function_exists('getDashboardMenuAdminConfigPath')) {
     function getDashboardMenuAdminConfigPath()
     {
@@ -34,12 +190,18 @@ if (!function_exists('getDashboardMenuAdminOverrides')) {
             return [];
         }
 
+        $size = @filesize($path);
+        if (is_int($size) && $size > (2 * 1024 * 1024)) {
+            error_log('Dashboard menu override file too large and was ignored: ' . $path);
+            return [];
+        }
+
         $raw = @file_get_contents($path);
         if (!is_string($raw) || trim($raw) === '') {
             return [];
         }
 
-        $decoded = json_decode($raw, true);
+        $decoded = json_decode($raw, true, 128);
         return is_array($decoded) ? $decoded : [];
     }
 }
@@ -57,6 +219,12 @@ if (!function_exists('saveDashboardMenuAdminOverrides')) {
             return false;
         }
 
+        $normalizedRegistry = [
+            'top_nav' => [],
+            'sidebar' => [],
+            'footer' => [],
+        ];
+
         foreach (['top_nav', 'sidebar', 'footer'] as $section) {
             if (!isset($registry[$section]) || !is_array($registry[$section])) {
                 $error = 'Invalid registry section: ' . $section;
@@ -68,8 +236,25 @@ if (!function_exists('saveDashboardMenuAdminOverrides')) {
                     $error = 'Invalid registry item in section: ' . $section;
                     return false;
                 }
+
+                $itemError = '';
+                $normalizedItem = sanitizeDashboardMenuItemForSection($section, $key, $item, true, $itemError);
+                if (!is_array($normalizedItem)) {
+                    $error = $itemError !== '' ? $itemError : ('Invalid registry item in section: ' . $section);
+                    return false;
+                }
+
+                $normalizedRegistry[$section][$normalizedItem['key']] = $normalizedItem;
             }
         }
+
+        $allowedBySection = [
+            'top_nav' => array_keys($normalizedRegistry['top_nav']),
+            'sidebar' => array_keys($normalizedRegistry['sidebar']),
+            'footer' => array_keys($normalizedRegistry['footer']),
+        ];
+
+        $normalizedRules = [];
 
         foreach ($rules as $role => $sections) {
             if (!is_string($role) || !is_array($sections)) {
@@ -77,26 +262,48 @@ if (!function_exists('saveDashboardMenuAdminOverrides')) {
                 return false;
             }
 
+            $normalizedRole = normalizeRoleKeyForMenuConfig($role);
+            if (!isDashboardMenuIdentifierValid($normalizedRole)) {
+                $error = 'Invalid role key in rules: ' . $role;
+                return false;
+            }
+
+            $normalizedRules[$normalizedRole] = [
+                'top_nav' => [],
+                'sidebar' => [],
+                'footer' => [],
+            ];
+
             foreach (['top_nav', 'sidebar', 'footer'] as $section) {
                 if (!isset($sections[$section]) || !is_array($sections[$section])) {
                     $error = 'Invalid rules section for role ' . $role . ': ' . $section;
                     return false;
                 }
 
-                foreach ($sections[$section] as $menuKey) {
-                    if (!is_string($menuKey) || trim($menuKey) === '') {
-                        $error = 'Invalid menu key in role ' . $role . ' section ' . $section;
+                $rawKeys = array_values(array_filter((array)$sections[$section], 'is_string'));
+                foreach ($rawKeys as $rawMenuKey) {
+                    $normalizedMenuKey = strtolower(trim((string)$rawMenuKey));
+                    if ($normalizedMenuKey === '' || !isDashboardMenuIdentifierValid($normalizedMenuKey) || !in_array($normalizedMenuKey, (array)$allowedBySection[$section], true)) {
+                        $error = 'Rules for role ' . $role . ' contain unknown or unsafe keys in section ' . $section;
                         return false;
                     }
                 }
+
+                $filteredKeys = filterDashboardRuleKeysByAllowed((array)$sections[$section], (array)$allowedBySection[$section]);
+                if (!is_array($filteredKeys)) {
+                    $error = 'Rules for role ' . $role . ' contain unknown or unsafe keys in section ' . $section;
+                    return false;
+                }
+
+                $normalizedRules[$normalizedRole][$section] = $filteredKeys;
             }
         }
 
         $json = json_encode([
             'schema_version' => 1,
             'updated_at' => gmdate('c'),
-            'registry' => $registry,
-            'rules' => $rules,
+            'registry' => $normalizedRegistry,
+            'rules' => $normalizedRules,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         if (!is_string($json)) {
@@ -105,11 +312,35 @@ if (!function_exists('saveDashboardMenuAdminOverrides')) {
         }
 
         $path = getDashboardMenuAdminConfigPath();
-        $written = @file_put_contents($path, $json);
-        if ($written === false) {
-            $error = 'Unable to write override file: ' . $path;
+        $dir = dirname($path);
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true)) {
+            $error = 'Unable to create override directory: ' . $dir;
             return false;
         }
+
+        $suffix = uniqid('', true);
+        if (function_exists('random_bytes')) {
+            try {
+                $suffix = bin2hex(random_bytes(8));
+            } catch (Throwable $e) {
+                $suffix = uniqid('', true);
+            }
+        }
+        $tmpPath = $path . '.tmp.' . $suffix;
+
+        $written = @file_put_contents($tmpPath, $json, LOCK_EX);
+        if ($written === false) {
+            $error = 'Unable to write override temp file: ' . $tmpPath;
+            return false;
+        }
+
+        if (!@rename($tmpPath, $path)) {
+            @unlink($tmpPath);
+            $error = 'Unable to replace override file: ' . $path;
+            return false;
+        }
+
+        @chmod($path, 0600);
 
         return true;
     }
@@ -377,11 +608,20 @@ if (!function_exists('getDashboardMenuRegistry')) {
                     continue;
                 }
 
-                if (!isset($item['key']) || trim((string)$item['key']) === '') {
-                    $item['key'] = $key;
+                $baseItem = [];
+                if (isset($registry[$section][$key]) && is_array($registry[$section][$key])) {
+                    $baseItem = $registry[$section][$key];
                 }
 
-                $registry[$section][$key] = $item;
+                $candidate = array_merge($baseItem, $item);
+
+                $itemError = '';
+                $normalizedItem = sanitizeDashboardMenuItemForSection($section, $key, $candidate, false, $itemError);
+                if (!is_array($normalizedItem)) {
+                    continue;
+                }
+
+                $registry[$section][$normalizedItem['key']] = $normalizedItem;
             }
         }
 
@@ -437,6 +677,12 @@ if (!function_exists('getDashboardRoleMenuRules')) {
     {
         $rules = getDashboardMenuBaseRoleRules();
         $overrides = getDashboardMenuAdminOverrides();
+        $registry = getDashboardMenuRegistry();
+        $allowedBySection = [
+            'top_nav' => array_keys((array)($registry['top_nav'] ?? [])),
+            'sidebar' => array_keys((array)($registry['sidebar'] ?? [])),
+            'footer' => array_keys((array)($registry['footer'] ?? [])),
+        ];
 
         if (!isset($overrides['rules']) || !is_array($overrides['rules'])) {
             return $rules;
@@ -448,10 +694,14 @@ if (!function_exists('getDashboardRoleMenuRules')) {
             }
 
             $normalizedRole = normalizeRoleKeyForMenuConfig($role);
+            if (!isDashboardMenuIdentifierValid($normalizedRole)) {
+                continue;
+            }
+
             $rules[$normalizedRole] = [
-                'top_nav' => array_values(array_filter((array)($sections['top_nav'] ?? []), 'is_string')),
-                'sidebar' => array_values(array_filter((array)($sections['sidebar'] ?? []), 'is_string')),
-                'footer' => array_values(array_filter((array)($sections['footer'] ?? []), 'is_string')),
+                'top_nav' => filterDashboardRuleKeysByAllowed((array)($sections['top_nav'] ?? []), $allowedBySection['top_nav']),
+                'sidebar' => filterDashboardRuleKeysByAllowed((array)($sections['sidebar'] ?? []), $allowedBySection['sidebar']),
+                'footer' => filterDashboardRuleKeysByAllowed((array)($sections['footer'] ?? []), $allowedBySection['footer']),
             ];
         }
 
@@ -520,6 +770,126 @@ if (!function_exists('currentUserCanAccessDashboardMenu')) {
     {
         $currentRole = (string)($_SESSION['user_role'] ?? '');
         return canRoleAccessAnyDashboardMenuSection($currentRole, $menuKey, $sections);
+    }
+}
+
+if (!function_exists('currentUserCanAccessAnyDashboardMenu')) {
+    function currentUserCanAccessAnyDashboardMenu(array $menuKeys, array $sections = ['sidebar', 'top_nav', 'footer'])
+    {
+        foreach ($menuKeys as $menuKey) {
+            if (currentUserCanAccessDashboardMenu($menuKey, $sections)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('ensureDashboardMenuDeniedAccessTable')) {
+    function ensureDashboardMenuDeniedAccessTable(PDO $pdo)
+    {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS dashboard_menu_denied_access_logs (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                actor_user_id VARCHAR(80) NOT NULL,
+                actor_role VARCHAR(80) NOT NULL,
+                menu_keys VARCHAR(255) NOT NULL,
+                sections VARCHAR(120) NOT NULL,
+                request_uri VARCHAR(255) NOT NULL,
+                ip_address VARCHAR(64) NOT NULL,
+                user_agent VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_dashboard_menu_denied_created_at (created_at),
+                INDEX idx_dashboard_menu_denied_actor (actor_user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    }
+}
+
+if (!function_exists('getDashboardMenuRequestIpAddress')) {
+    function getDashboardMenuRequestIpAddress()
+    {
+        $remoteAddr = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+        return $remoteAddr !== '' ? substr($remoteAddr, 0, 64) : 'unknown';
+    }
+}
+
+if (!function_exists('logDashboardMenuDeniedAccess')) {
+    function logDashboardMenuDeniedAccess(PDO $pdo, array $menuKeys, array $sections)
+    {
+        try {
+            ensureDashboardMenuDeniedAccessTable($pdo);
+
+            $menuKeysCsv = substr(implode(',', array_slice(array_values(array_unique(array_map(function ($v) {
+                return trim((string)$v);
+            }, $menuKeys))), 0, 10)), 0, 255);
+            $sectionsCsv = substr(implode(',', array_slice(array_values(array_unique(array_map(function ($v) {
+                return strtolower(trim((string)$v));
+            }, $sections))), 0, 5)), 0, 120);
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO dashboard_menu_denied_access_logs (actor_user_id, actor_role, menu_keys, sections, request_uri, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
+
+            $stmt->execute([
+                substr(trim((string)($_SESSION['user_id'] ?? 'unknown')), 0, 80),
+                substr(trim((string)($_SESSION['user_role'] ?? 'unknown')), 0, 80),
+                $menuKeysCsv,
+                $sectionsCsv,
+                substr(trim((string)($_SERVER['REQUEST_URI'] ?? 'unknown')), 0, 255),
+                getDashboardMenuRequestIpAddress(),
+                substr(trim((string)($_SERVER['HTTP_USER_AGENT'] ?? 'unknown')), 0, 255),
+            ]);
+        } catch (Throwable $e) {
+            error_log('Dashboard denied access log failed: ' . $e->getMessage());
+        }
+    }
+}
+
+if (!function_exists('enforceCurrentUserDashboardMenuAccess')) {
+    function enforceCurrentUserDashboardMenuAccess($menuKey, array $sections = ['sidebar', 'top_nav', 'footer'], $redirect = '../../auth/login')
+    {
+        if (currentUserCanAccessDashboardMenu($menuKey, $sections)) {
+            return;
+        }
+
+        if (function_exists('getDBConnection')) {
+            try {
+                $pdo = getDBConnection();
+                if ($pdo instanceof PDO) {
+                    logDashboardMenuDeniedAccess($pdo, [(string)$menuKey], $sections);
+                }
+            } catch (Throwable $e) {
+                error_log('Dashboard access guard logging failed: ' . $e->getMessage());
+            }
+        }
+
+        header('Location: ' . $redirect);
+        exit();
+    }
+}
+
+if (!function_exists('enforceCurrentUserDashboardMenuAccessAny')) {
+    function enforceCurrentUserDashboardMenuAccessAny(array $menuKeys, array $sections = ['sidebar', 'top_nav', 'footer'], $redirect = '../../auth/login')
+    {
+        if (currentUserCanAccessAnyDashboardMenu($menuKeys, $sections)) {
+            return;
+        }
+
+        if (function_exists('getDBConnection')) {
+            try {
+                $pdo = getDBConnection();
+                if ($pdo instanceof PDO) {
+                    logDashboardMenuDeniedAccess($pdo, $menuKeys, $sections);
+                }
+            } catch (Throwable $e) {
+                error_log('Dashboard access-any guard logging failed: ' . $e->getMessage());
+            }
+        }
+
+        header('Location: ' . $redirect);
+        exit();
     }
 }
 

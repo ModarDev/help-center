@@ -14,10 +14,7 @@ try {
         exit();
     }
 
-    if (!currentUserCanAccessDashboardMenu('customerlist', ['sidebar'])) {
-        header('Location: ../../auth/login');
-        exit();
-    }
+    enforceCurrentUserDashboardMenuAccess('customerlist', ['sidebar']);
 
     if (shouldRequireBranchSelection($access_pdo)) {
         $active_branch_id = getCurrentBranchId();

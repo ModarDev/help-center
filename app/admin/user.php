@@ -12,10 +12,7 @@ if (!userHasAnyRole(['admin', 'system_admin'])) {
 	exit();
 }
 
-if (!currentUserCanAccessDashboardMenu('users', ['top_nav', 'footer'])) {
-	header('Location: ../../auth/login');
-	exit();
-}
+enforceCurrentUserDashboardMenuAccess('users', ['top_nav', 'footer']);
 
 $allowed_modules = ['sales', 'purchases', 'inventory', 'manufacturing', 'fixed-assets', 'dimensions', 'banking-gl', 'setup'];
 $current_module = isset($_GET['module']) ? trim((string)$_GET['module']) : 'setup';
