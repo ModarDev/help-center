@@ -1,0 +1,310 @@
+{
+    "schema_version": 1,
+    "updated_at": "2026-07-05T15:56:00+00:00",
+    "registry": {
+        "top_nav": {
+            "dashboard": {
+                "key": "dashboard",
+                "label": "Dashboard",
+                "sub": "Overview",
+                "href": "#"
+            },
+            "sales": {
+                "key": "sales",
+                "label": "Sales",
+                "sub": "Orders & Invoices",
+                "href": "spa.php?module=sales"
+            },
+            "setup": {
+                "key": "setup",
+                "label": "Setup",
+                "sub": "System Setup",
+                "href": "company_settings.php?module=setup"
+            },
+            "menu-config": {
+                "key": "menu-config",
+                "label": "Menu Config",
+                "sub": "Role Menu Setup",
+                "href": "page_dashboard_menu_config.php?module=menuconfig"
+            },
+            "users": {
+                "key": "users",
+                "label": "Users",
+                "sub": "User Management",
+                "href": "user.php?module=setup"
+            }
+        },
+        "sidebar": {
+            "sales": {
+                "key": "sales",
+                "label": "Sales",
+                "sub": "Orders & Invoices",
+                "href": "spa.php?module=sales",
+                "color": "#e53935",
+                "iconSrc": "../../assets/images/icons/sidebar/sales.svg"
+            },
+            "purchases": {
+                "key": "purchases",
+                "label": "Purchases",
+                "sub": "Suppliers & Bills",
+                "href": "#",
+                "color": "#7b1fa2",
+                "iconSrc": "../../assets/images/icons/sidebar/inventory.svg"
+            },
+            "branch": {
+                "key": "branch",
+                "label": "Branch Management",
+                "sub": "branch",
+                "href": "../admin/page_branch_crud.php?module=branch",
+                "color": "#fb8c00",
+                "iconSrc": "../../assets/images/icons/sidebar/branch.png"
+            },
+            "inventory": {
+                "key": "inventory",
+                "label": "Items and Inventory",
+                "sub": "Items & Stock",
+                "href": "#",
+                "color": "#2e7d32",
+                "iconSrc": "../../assets/images/icons/sidebar/inventory.svg"
+            },
+            "manufacturing": {
+                "key": "manufacturing",
+                "label": "Manufacturing",
+                "sub": "Work Orders",
+                "href": "#",
+                "color": "#00897b",
+                "iconSrc": "../../assets/images/icons/sidebar/manufacturing.svg"
+            },
+            "fixed-assets": {
+                "key": "fixed-assets",
+                "label": "Fixed Assets",
+                "sub": "Assets & Depreciation",
+                "href": "#",
+                "color": "#1976d2",
+                "iconSrc": "../../assets/images/icons/sidebar/fixed-assets.svg"
+            },
+            "dimensions": {
+                "key": "dimensions",
+                "label": "Dimensions",
+                "sub": "Budget & Analysis",
+                "href": "#",
+                "color": "#6a1b9a",
+                "iconSrc": "../../assets/images/icons/sidebar/dimensions.svg"
+            },
+            "discord": {
+                "key": "discord",
+                "label": "Discord",
+                "sub": "Communication",
+                "href": "../admin/page_setup_discord.php?module=discord",
+                "color": "#7289da",
+                "iconSrc": "../../assets/images/icons/sidebar/discord.png"
+            },
+            "menu-config": {
+                "key": "menu-config",
+                "label": "Menu Config",
+                "sub": "Role Menu Setup",
+                "href": "page_dashboard_menu_config.php?module=menuconfig",
+                "color": "#3949ab",
+                "iconSrc": "../../assets/images/icons/sidebar/setup.svg"
+            },
+            "setup": {
+                "key": "setup",
+                "label": "ตั้งค่า",
+                "sub": "System Setup",
+                "href": "company_settings.php?module=setup",
+                "color": "#455a64",
+                "iconSrc": "../../assets/images/icons/sidebar/setup.svg"
+            },
+            "user-setup": {
+                "key": "user-setup",
+                "label": "ตั้งผู้ใช้งานในระบบ",
+                "sub": "System Setup report",
+                "href": "edit_user.php?module=setup",
+                "color": "#455a64",
+                "iconSrc": "../../assets/images/icons/sidebar/user.png"
+            },
+            "customer": {
+                "key": "customer",
+                "label": "Customer Management",
+                "sub": "Customer Management",
+                "href": "page_customer_management.php?module=customer",
+                "color": "#455a64",
+                "iconSrc": "../../assets/images/icons/sidebar/customer.png"
+            },
+            "customerlist": {
+                "key": "customerlist",
+                "label": "Customer List",
+                "sub": "Customer List",
+                "href": "page_customer_list.php?module=customer",
+                "color": "#455a64",
+                "iconSrc": "../../assets/images/icons/sidebar/customer-list.png"
+            },
+            "groupsetup": {
+                "key": "groupsetup",
+                "label": "Group Setup",
+                "sub": "Group Setup",
+                "href": "setup_group_sales.php?module=groupsetup",
+                "color": "#85a5b4",
+                "iconSrc": "../../assets/images/icons/sidebar/partners.png"
+            },
+            "groupsjoin": {
+                "key": "groupsjoin",
+                "label": "Join Group",
+                "sub": "Join by Invite",
+                "href": "join_group_sales.php?module=groupsjoin",
+                "color": "#5b8aa6",
+                "iconSrc": "../../assets/images/icons/sidebar/partners.png"
+            }
+        },
+        "footer": {
+            "home": {
+                "tip": "Home",
+                "color": "#b8d7ff",
+                "href": "index.php",
+                "iconSrc": "../../assets/images/icons/sidebar/foot-home.svg",
+                "key": "home"
+            },
+            "users": {
+                "tip": "Users",
+                "color": "#c7f1d6",
+                "href": "user.php?module=setup",
+                "iconSrc": "../../assets/images/icons/sidebar/foot-users.svg",
+                "key": "users"
+            },
+            "reports": {
+                "tip": "Reports",
+                "color": "#ffd7a8",
+                "href": "#",
+                "iconSrc": "../../assets/images/icons/sidebar/foot-reports.svg",
+                "key": "reports"
+            },
+            "logout": {
+                "tip": "Logout",
+                "color": "#ffb8b8",
+                "href": "../../auth/logout.php",
+                "iconSrc": "../../assets/images/icons/sidebar/foot-logout.svg",
+                "key": "logout"
+            }
+        }
+    },
+    "rules": {
+        "system_admin": {
+            "top_nav": [
+                "dashboard",
+                "setup",
+                "menu-config",
+                "users"
+            ],
+            "sidebar": [
+                "sales",
+                "branch",
+                "inventory",
+                "manufacturing",
+                "fixed-assets",
+                "dimensions",
+                "setup",
+                "menu-config",
+                "user-setup"
+            ],
+            "footer": [
+                "home",
+                "users",
+                "logout"
+            ]
+        },
+        "admin": {
+            "top_nav": [
+                "dashboard",
+                "setup",
+                "menu-config",
+                "users"
+            ],
+            "sidebar": [
+                "sales",
+                "branch",
+                "discord",
+                "inventory",
+                "manufacturing",
+                "fixed-assets",
+                "dimensions",
+                "setup",
+                "menu-config",
+                "user-setup"
+            ],
+            "footer": [
+                "home",
+                "users",
+                "logout"
+            ]
+        },
+        "manager": {
+            "top_nav": [
+                "dashboard",
+                "sales"
+            ],
+            "sidebar": [
+                "sales"
+            ],
+            "footer": [
+                "logout"
+            ]
+        },
+        "employee": {
+            "top_nav": [
+                "dashboard"
+            ],
+            "sidebar": [
+                "sales"
+            ],
+            "footer": [
+                "logout"
+            ]
+        },
+        "sell_car": {
+            "top_nav": [
+                "dashboard",
+                "sales"
+            ],
+            "sidebar": [
+                "sales",
+                "customer",
+                "customerlist",
+                "groupsjoin"
+            ],
+            "footer": [
+                "home",
+                "reports",
+                "logout"
+            ]
+        },
+        "sales_manager": {
+            "top_nav": [
+                "dashboard",
+                "sales"
+            ],
+            "sidebar": [
+                "sales",
+                "customer",
+                "customerlist",
+                "groupsetup"
+            ],
+            "footer": [
+                "home",
+                "reports",
+                "logout"
+            ]
+        },
+        "default": {
+            "top_nav": [
+                "dashboard"
+            ],
+            "sidebar": [
+                "sales"
+            ],
+            "footer": [
+                "home",
+                "logout"
+            ]
+        }
+    }
+}

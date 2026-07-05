@@ -110,8 +110,8 @@ $csrf_token = generateCSRFToken();
             </form>
         </div>
  <div class="register-link">
-                <p>แจ้งปัญหาการใช้งานหรือติดต่อสอบถามเพิ่มเติมได้ที่ itsupport@apmofficial.com</p><br>
-                <p>© 2026 APM GROUP Co., Ltd. All rights reserved. Developed by CKT GROUP Team.</p>
+                <p>แจ้งปัญหาการใช้งานหรือติดต่อสอบถามเพิ่มเติมได้ที่ </p><br>
+                <p>© 2026 CKT GROUP Co., Ltd. All rights reserved. Developed by CKT GROUP TECH Team.</p>
             </div>
     </div>
 
